@@ -1,3 +1,4 @@
+import time
 from contextlib import contextmanager
 
 from pyVim import connect
@@ -83,48 +84,22 @@ class VMWareClient(object):
         nic.device.connectable.allowGuestControl = True
 
         vmconf = vim.vm.ConfigSpec()
-        vmconf.numCPUs = 1
+        vmconf.numCPUs = 1  # TODO: allow customization of these
         vmconf.memoryMB = 1024
         vmconf.deviceChange = [nic]
+
         vmconf.bootOptions = vim.vm.BootOptions()
+        # Set the boot device to the first disk just in-case it was set to something else
+        boot_disk_device = vim.vm.BootOptions.BootableDiskDevice()
+        boot_disk_device.deviceKey = 2000
+        vmconf.bootOptions.bootOrder = [boot_disk_device]
 
         enable_uuid_opt = vim.option.OptionValue()
-        enable_uuid_opt.key = 'disk.enableUUID'
+        enable_uuid_opt.key = 'disk.enableUUID'  # Allow the guest to easily mount extra disks
         enable_uuid_opt.value = '1'
         vmconf.extraConfig = [enable_uuid_opt]
 
-        bootDiskDevice = vim.vm.BootOptions.BootableDiskDevice()
-        bootDiskDevice.deviceKey = 2000
-
-        vmconf.bootOptions.bootOrder = [bootDiskDevice]
-
         clonespec.config = vmconf
-
-        # customspec = vim.vm.customization.Specification()
-        #
-        # guest_map = vim.vm.customization.AdapterMapping()
-        # guest_map.adapter = vim.vm.customization.IPSettings()
-        # guest_map.adapter.ip = vim.vm.customization.FixedIp()
-        # guest_map.adapter.ip.ipAddress = '10.20.0.15'
-        # guest_map.adapter.subnetMask = '255.255.255.0'
-        # guest_map.adapter.gateway = '10.20.0.1'
-        #
-        # globalip = vim.vm.customization.GlobalIPSettings()
-        # globalip.dnsServerList = ['8.8.8.8', '8.8.4.4']
-        # globalip.dnsSuffixList = 'rmb938.me'
-        # customspec.globalIPSettings = globalip
-        #
-        # customspec.nicSettingMap = [guest_map]
-        #
-        # ident = vim.vm.customization.LinuxPrep()
-        # ident.domain = 'rmb938.me'
-        # ident.hostName = vim.vm.customization.FixedName()
-        # ident.hostName.name = 'woovm'
-        #
-        # customspec.identity = ident
-        # clonespec.customization = customspec
-
-        # TODO: guest customizations with dns, gateway and ip
 
         task = image.Clone(folder=vms_folder, name=vm_name, spec=clonespec)
         self.wait_for_tasks([task])
@@ -132,11 +107,42 @@ class VMWareClient(object):
         return self.get_vm(vm_name)
 
     def power_on_vm(self, vm):
-        task = vm.PowerOn()
-        self.wait_for_tasks([task])
+        if vm.runtime.powerState == vim.VirtualMachinePowerState.poweredOff:
+            task = vm.PowerOn()
+            self.wait_for_tasks([task])
+
+    def power_off_vm(self, vm, hard=False, timeout=60):
+        if vm.runtime.powerState == vim.VirtualMachinePowerState.poweredOn:
+            if hard is False:
+                try:
+                    vm.ShutdownGuest()
+                except vim.fault.ToolsUnavailable:
+                    # Guest tools was not running to hard power off instead
+                    return self.power_off_vm(vm, hard=True)
+                # Poll every 5 seconds until powered off or timeout
+                while vm.runtime.powerState == vim.VirtualMachinePowerState.poweredOn:
+                    if timeout <= 0:
+                        break
+                    timeout -= 5
+                    time.sleep(5)
+                else:
+                    # VM has finished powering off
+                    return
+
+            task = vm.PowerOff()
+            self.wait_for_tasks([task])
 
     def delete_vm(self, vm):
-        task = vm.Destroy_task()
+        task = vm.Destroy()
+        self.wait_for_tasks([task])
+
+    def template_vm(self, vm):
+        vm.MarkAsTemplate()  # This doesn't return a task?
+        images_folder = self.get_obj([vim.Folder], SETTINGS.VCENTER_IMAGES_FOLDER)
+        if images_folder is None:
+            raise LookupError("Could not find Images folder with the name of %s" % SETTINGS.VCENTER_IMAGES_FOLDER)
+
+        task = images_folder.MoveInto([vm])
         self.wait_for_tasks([task])
 
     def find_vm_mac(self, vm):

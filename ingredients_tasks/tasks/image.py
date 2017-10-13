@@ -19,9 +19,6 @@ def create_image(self, **kwargs):
 
 @celery.shared_task(base=ImageTask, bind=True, max_retires=2, default_retry_delay=5)
 def delete_image(self, **kwargs):
-    if self.image.state != ImageState.DELETING:  # We might be faster than the db so retry
-        raise self.retry()
-
     vmware_image = self.vmware_session.get_image(self.image.file_name)
 
     if vmware_image is not None:
@@ -32,3 +29,16 @@ def delete_image(self, **kwargs):
     self.image.state = ImageState.DELETED
 
     self.db_session.delete(self.image)
+
+
+@celery.shared_task(base=ImageTask, bind=True, max_retires=2, default_retry_delay=5)
+def convert_vm(self, **kwargs):
+    vmware_vm = self.vmware_session.get_vm(self.image.file_name)
+
+    if vmware_vm is None:
+        raise LookupError(
+            'Could not find backing vm for image %s when trying to convert to template.' % str(self.instance.id))
+
+    self.vmware_session.template_vm(vmware_vm)
+
+    self.image.state = ImageState.CREATED

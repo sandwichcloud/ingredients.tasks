@@ -1,4 +1,5 @@
 celery==4.1.0 # BSD 3-clause
+amqp==2.1.1 # BSD 3-clause This is needed for Bash on Windows https://github.com/celery/py-amqp/issues/145
 pyvmomi==6.5.0.2017.5-1 # Apache 2.0
 pypureomapi==0.6 # Apache 2.0
 ingredients.db==0.0.1

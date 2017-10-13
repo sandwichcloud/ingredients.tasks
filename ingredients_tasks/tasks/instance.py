@@ -65,14 +65,16 @@ def create_instance(self, **kwargs):
 
 
 @celery.shared_task(base=InstanceTask, bind=True, max_retires=2, default_retry_delay=5)
-def delete_instance(self, **kwargs):
-    vmware_vm = self.vmware_session.get_vm(self.instance.id)
+def delete_instance(self, delete_backing: bool, **kwargs):
+    if delete_backing:
+        vmware_vm = self.vmware_session.get_vm(str(self.instance.id))
 
-    if vmware_vm is None:
-        logger.warning('Could not find backing vm for instance %s when trying to delete.' % str(self.instance.id))
-    else:
-        logger.info('Deleting backing vm for instance %s' % str(self.instance.id))
-        self.vmware_session.delete_vm(vmware_vm)
+        if vmware_vm is None:
+            logger.warning('Could not find backing vm for instance %s when trying to delete.' % str(self.instance.id))
+        else:
+            logger.info('Deleting backing vm for instance %s' % str(self.instance.id))
+            self.vmware_session.power_off_vm(vmware_vm)
+            self.vmware_session.delete_vm(vmware_vm)
 
     network_port = self.db_session.query(NetworkPort).filter(
         NetworkPort.id == self.instance.network_port_id).with_for_update().first()
@@ -80,3 +82,40 @@ def delete_instance(self, **kwargs):
     self.instance.state = InstanceState.DELETED
     self.db_session.delete(self.instance)
     self.db_session.delete(network_port)
+
+
+@celery.shared_task(base=InstanceTask, bind=True, max_retires=2, default_retry_delay=5)
+def stop_instance(self, hard=False, timeout=60, **kwargs):
+    vmware_vm = self.vmware_session.get_vm(str(self.instance.id))
+
+    if vmware_vm is None:
+        raise LookupError('Could not find backing vm for instance %s when trying to stop.' % str(self.instance.id))
+
+    self.vmware_session.power_off_vm(vmware_vm, hard=hard, timeout=timeout)
+
+    self.instance.state = InstanceState.STOPPED
+
+
+@celery.shared_task(base=InstanceTask, bind=True, max_retires=2, default_retry_delay=5)
+def start_instance(self, **kwargs):
+    vmware_vm = self.vmware_session.get_vm(str(self.instance.id))
+
+    if vmware_vm is None:
+        raise LookupError('Could not find backing vm for instance %s when trying to start.' % str(self.instance.id))
+
+    self.vmware_session.power_on_vm(vmware_vm)
+
+    self.instance.state = InstanceState.ACTIVE
+
+
+@celery.shared_task(base=InstanceTask, bind=True, max_retires=2, default_retry_delay=5)
+def restart_instance(self, hard=False, timeout=60, **kwargs):
+    vmware_vm = self.vmware_session.get_vm(str(self.instance.id))
+
+    if vmware_vm is None:
+        raise LookupError('Could not find backing vm for instance %s when trying to restart.' % str(self.instance.id))
+
+    self.vmware_session.power_off_vm(vmware_vm, hard=hard, timeout=timeout)
+    self.vmware_session.power_on_vm(vmware_vm)
+
+    self.instance.state = InstanceState.ACTIVE
