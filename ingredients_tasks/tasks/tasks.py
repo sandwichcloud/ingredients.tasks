@@ -93,7 +93,10 @@ class TaskStateMixin(DatabaseMixin):
     def setup_task(self, task_id, kwargs):
         self.setup_db_session()
         try:
-            self.task = self.db_session.query(Task).filter(Task.id == task_id).with_for_update().one()
+            self.task = self.db_session.query(Task).filter(Task.id == task_id).one()
+            if self.task.stopped_at is not None:
+                self.task = None  # Force a failure because the task has already stopped
+                raise ValueError("Task has already stopped, cannot do it again.")
         except NoResultFound as exc:  # We might be faster than the db so retry
             raise self.retry()
 
@@ -123,7 +126,7 @@ class ImageTask(TaskStateMixin, VMWareMixin, celery.Task):
     def __call__(self, *args, **kwargs):
         self.setup_task(self.request.id, kwargs)
         try:
-            self.image = self.db_session.query(Image).filter(Image.id == kwargs['image_id']).with_for_update().one()
+            self.image = self.db_session.query(Image).filter(Image.id == kwargs['image_id']).one()
         except NoResultFound as exc:  # We might be faster than the db so retry
             raise self.retry()
         self.setup_vmware_session()
@@ -147,7 +150,7 @@ class InstanceTask(TaskStateMixin, VMWareMixin, OmapiMixin, celery.Task):
         self.setup_task(self.request.id, kwargs)
         try:
             self.instance = self.db_session.query(Instance).filter(
-                Instance.id == kwargs['instance_id']).with_for_update().one()
+                Instance.id == kwargs['instance_id']).one()
         except NoResultFound as exc:  # We might be faster than the db so retry
             raise self.retry()
         self.setup_vmware_session()
@@ -172,7 +175,7 @@ class NetworkTask(TaskStateMixin, VMWareMixin, celery.Task):
         self.setup_task(self.request.id, kwargs)
         try:
             self.network = self.db_session.query(Network).filter(
-                Network.id == kwargs['network_id']).with_for_update().one()
+                Network.id == kwargs['network_id']).one()
         except NoResultFound as exc:  # We might be faster than the db so retry
             raise self.retry()
         self.setup_vmware_session()

@@ -17,7 +17,7 @@ def create_instance(self, **kwargs):
         raise ValueError("Image turned NULL before the instance could be created")
 
     try:
-        image = self.db_session.query(Image).filter(Image.id == self.instance.image_id).with_for_update().one()
+        image = self.db_session.query(Image).filter(Image.id == self.instance.image_id).one()
     except NoResultFound:
         raise LookupError("Image got deleted before the instance could be created")
 
@@ -34,9 +34,9 @@ def create_instance(self, **kwargs):
         self.vmware_session.delete_vm(old_vmware_vm)
 
     network_port = self.db_session.query(NetworkPort).filter(
-        NetworkPort.id == self.instance.network_port_id).with_for_update().first()
+        NetworkPort.id == self.instance.network_port_id).first()
 
-    network = self.db_session.query(Network).filter(Network.id == network_port.network_id).with_for_update().first()
+    network = self.db_session.query(Network).filter(Network.id == network_port.network_id).first()
 
     logger.info('Allocating IP address for instance %s' % str(self.instance.id))
     ip_address = network.next_free_address(self.db_session)
@@ -77,7 +77,7 @@ def delete_instance(self, delete_backing: bool, **kwargs):
             self.vmware_session.delete_vm(vmware_vm)
 
     network_port = self.db_session.query(NetworkPort).filter(
-        NetworkPort.id == self.instance.network_port_id).with_for_update().first()
+        NetworkPort.id == self.instance.network_port_id).first()
 
     self.instance.state = InstanceState.DELETED
     self.db_session.delete(self.instance)

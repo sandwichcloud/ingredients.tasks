@@ -43,8 +43,8 @@ class Messaging(object):
             task_reject_on_worker_last=True,
             task_ignore_result=True,
             task_store_errors_even_if_ignored=False,
-            task_soft_time_limit=300,
-            task_time_limit=600,
+            task_soft_time_limit=300,  # 5 minutes
+            task_time_limit=600,  # 10 minutes
             worker_prefetch_multiplier=1,
             include=include,
             task_queues=task_queues,
