@@ -6,6 +6,7 @@ from ingredients_db.models.images import Image
 from ingredients_db.models.instance import InstanceState
 from ingredients_db.models.network import Network
 from ingredients_db.models.network_port import NetworkPort
+from ingredients_tasks.celary import database
 from ingredients_tasks.tasks.tasks import InstanceTask
 
 logger = get_task_logger(__name__)
@@ -28,25 +29,37 @@ def create_instance(self, **kwargs):
 
     old_vmware_vm = self.vmware_session.get_vm(str(self.instance.id))
     if old_vmware_vm is not None:
-        # A backing vm with the same id exists (how?!) so we probably should delete it
+        # A backing vm with the same id exists (how?! the task should have failed) so we probably should delete it
         logger.info(
             'A backing vm with the id of %s already exists so it is going to be deleted.' % str(self.instance.id))
         self.vmware_session.delete_vm(old_vmware_vm)
 
-    network_port = self.db_session.query(NetworkPort).filter(
-        NetworkPort.id == self.instance.network_port_id).first()
+    # We need a nested transaction because we need to lock the network so we can calculate the next free ip
+    # Without a nested transaction the lock will last for the total time of the task which could be several minutes
+    # this will block the api from creating new network_ports. With nested we only block for the time needed to
+    # calculate the next available ip address which is at most O(n) time with n being the number of
+    # ip addresses in the cidr
+    with database.session() as nested_session:
+        network_port = nested_session.query(NetworkPort).filter(
+            NetworkPort.id == self.instance.network_port_id).first()
 
-    network = self.db_session.query(Network).filter(Network.id == network_port.network_id).first()
+        network = nested_session.query(Network).filter(Network.id == network_port.network_id).with_for_update().first()
 
-    logger.info('Allocating IP address for instance %s' % str(self.instance.id))
-    ip_address = network.next_free_address(self.db_session)
-    if ip_address is None:
-        raise IndexError("Could not allocate a free ip address. Is the pool full?")
-    network_port.ip_address = ip_address
+        logger.info('Allocating IP address for instance %s' % str(self.instance.id))
+        if network_port.ip_address is not None:
+            # An ip address was already allocated (how?! the task should have failed) so let's reset it
+            network_port.ip_address = None
 
-    port_group = self.vmware_session.get_port_group(network.port_group)
-    if port_group is None:
-        raise LookupError("Cloud not find port group to connect to")
+        ip_address = network.next_free_address(nested_session)
+        if ip_address is None:
+            raise IndexError("Could not allocate a free ip address. Is the pool full?")
+        network_port.ip_address = ip_address
+        logger.info('Allocated IP address %s for instance %s' % (str(ip_address), str(self.instance.id)))
+
+        port_group = self.vmware_session.get_port_group(network.port_group)
+        if port_group is None:
+            raise LookupError("Cloud not find port group to connect to")
+        nested_session.commit()
 
     logger.info('Creating backing vm for instance %s' % str(self.instance.id))
     vmware_vm = self.vmware_session.create_vm(vm_name=str(self.instance.id), image=vmware_image, port_group=port_group)
@@ -56,7 +69,7 @@ def create_instance(self, **kwargs):
         raise LookupError("Could not find mac address of nic")
 
     logger.info('Telling DHCP about our IP for instance %s' % str(self.instance.id))
-    self.omapi_session.add_host(str(network_port.ip_address), nic_mac)
+    self.omapi_session.add_host(str(ip_address), nic_mac)
 
     logger.info('Powering on backing vm for instance %s' % str(self.instance.id))
     self.vmware_session.power_on_vm(vmware_vm)
