@@ -34,12 +34,12 @@ class Messaging(object):
                 'confirm_publish': True
             },
             task_acks_late=True,
-            task_reject_on_worker_last=True,
+            task_reject_on_worker_lost=True,
             task_ignore_result=True,
             task_store_errors_even_if_ignored=False,
             task_soft_time_limit=300,  # 5 minutes
             task_time_limit=600,  # 10 minutes
-            worker_prefetch_multiplier=1,
+            worker_prefetch_multiplier=1,  # One worker process can only do one type of task at a time
             include=include,
             task_queues=task_queues,
             task_routes=task_routes
@@ -53,12 +53,12 @@ class Messaging(object):
         task_queues = set()
         task_routes = {}
 
-        from ingredients_tasks.tasks.tasks import ImageTask, InstanceTask, NetworkTask
+        from ingredients_tasks.tasks.tasks import NetworkTask, ImageTask
 
         for task_module in args:
             include.append(task_module.__name__)
             for name, method in inspect.getmembers(task_module):
-                if method in [ImageTask, InstanceTask, NetworkTask]:
+                if method in [NetworkTask, ImageTask]:
                     continue
                 if hasattr(method, 'apply_async'):
                     task_queues.add(Queue(name, exchange=Exchange(task_module.__name__), routing_key=name))
