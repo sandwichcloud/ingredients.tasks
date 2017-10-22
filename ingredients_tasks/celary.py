@@ -4,12 +4,6 @@ import celery
 from kombu import Queue, Exchange
 from sqlalchemy.engine.url import URL
 
-from ingredients_db.database import Database
-from ingredients_tasks.conf.loader import SETTINGS
-
-database = Database(SETTINGS.DATABASE_HOST, SETTINGS.DATABASE_PORT, SETTINGS.DATABASE_USERNAME,
-                    SETTINGS.DATABASE_PASSWORD, SETTINGS.DATABASE_DB, SETTINGS.DATABASE_POOL_SIZE)
-
 
 class Messaging(object):
     def __init__(self, host, port, username, password, vhost):

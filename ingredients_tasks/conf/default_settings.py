@@ -1,8 +1,3 @@
-"""
-Default settings. Override these with settings in the module pointed to by the SETTINGS_MODULE
-environment variable.
-"""
-
 ####################
 # DATABASE         #
 ####################

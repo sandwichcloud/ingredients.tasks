@@ -3,15 +3,16 @@ import sys
 
 import celery
 from celery.utils.log import get_task_logger
+from simple_settings import settings
 from sqlalchemy.exc import OperationalError, IntegrityError, DataError, ProgrammingError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy_utils.types.arrow import arrow
 
+from ingredients_db.database import Database
 from ingredients_db.models.images import Image, ImageState
 from ingredients_db.models.instance import InstanceState, Instance
 from ingredients_db.models.network import Network, NetworkState
 from ingredients_db.models.task import TaskState, Task
-from ingredients_tasks.celary import database
 from ingredients_tasks.omapi import OmapiClient
 from ingredients_tasks.vmware import VMWareClient
 
@@ -26,11 +27,17 @@ class BaseMixin(object):
 class DatabaseMixin(BaseMixin):
     def __init__(self):
         super().__init__()
+        # TODO: find another place to put this db object (needs to not load the settings object)
+        # Currently each task has a database connection with pool size of settings.DATABASE_POOL_SIZE
+        # Cannot set to -1 pool size because some tasks need multiple connections
+        self.database = Database(settings.DATABASE_HOST, settings.DATABASE_PORT, settings.DATABASE_USERNAME,
+                                 settings.DATABASE_PASSWORD, settings.DATABASE_DB, settings.DATABASE_POOL_SIZE)
+        self.database.connect()
         self.db_session_manager = None
         self.db_session = None
 
     def setup_db_session(self):
-        self.db_session_manager = database.session()
+        self.db_session_manager = self.database.session()
         self.db_session = self.db_session_manager.__enter__()
 
     def after_return(self, status, retval, task_id, args, kwargs, einfo):

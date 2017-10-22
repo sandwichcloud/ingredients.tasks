@@ -6,7 +6,6 @@ from ingredients_db.models.images import Image
 from ingredients_db.models.instance import InstanceState
 from ingredients_db.models.network import Network
 from ingredients_db.models.network_port import NetworkPort
-from ingredients_tasks.celary import database
 from ingredients_tasks.tasks.tasks import InstanceTask
 
 logger = get_task_logger(__name__)
@@ -39,7 +38,7 @@ def create_instance(self, **kwargs):
     # this will block the api from creating new network_ports. With nested we only block for the time needed to
     # calculate the next available ip address which is at most O(n) time with n being the number of
     # ip addresses in the cidr
-    with database.session() as nested_session:
+    with self.database.session() as nested_session:
         network_port = nested_session.query(NetworkPort).filter(
             NetworkPort.id == self.instance.network_port_id).first()
 

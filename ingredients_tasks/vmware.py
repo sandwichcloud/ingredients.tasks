@@ -3,8 +3,7 @@ from contextlib import contextmanager
 
 from pyVim import connect
 from pyVmomi import vim, vmodl
-
-from ingredients_tasks.conf.loader import SETTINGS
+from simple_settings import settings
 
 
 class VMWareClient(object):
@@ -27,9 +26,9 @@ class VMWareClient(object):
         connect.Disconnect(self.service_instance)
 
     def get_image(self, image_name):
-        images_folder = self.get_obj([vim.Folder], SETTINGS.VCENTER_IMAGES_FOLDER)
+        images_folder = self.get_obj([vim.Folder], settings.VCENTER_IMAGES_FOLDER)
         if images_folder is None:
-            raise LookupError("Could not find Images folder with the name of %s" % SETTINGS.VCENTER_IMAGES_FOLDER)
+            raise LookupError("Could not find Images folder with the name of %s" % settings.VCENTER_IMAGES_FOLDER)
         image = self.get_obj_in_folder([vim.VirtualMachine], images_folder, image_name)
 
         return image
@@ -39,23 +38,23 @@ class VMWareClient(object):
         self.wait_for_tasks([task])
 
     def get_vm(self, vm_name):
-        vms_folder = self.get_obj([vim.Folder], SETTINGS.VCENTER_INSTANCES_FOLDER)
+        vms_folder = self.get_obj([vim.Folder], settings.VCENTER_INSTANCES_FOLDER)
         if vms_folder is None:
-            raise LookupError("Could not find Instances folder with the name of %s" % SETTINGS.VCENTER_INSTANCES_FOLDER)
+            raise LookupError("Could not find Instances folder with the name of %s" % settings.VCENTER_INSTANCES_FOLDER)
         return self.get_obj_in_folder([vim.VirtualMachine], vms_folder, vm_name)
 
     def create_vm(self, vm_name, image, port_group):
-        vms_folder = self.get_obj([vim.Folder], SETTINGS.VCENTER_INSTANCES_FOLDER)
+        vms_folder = self.get_obj([vim.Folder], settings.VCENTER_INSTANCES_FOLDER)
         if vms_folder is None:
-            raise LookupError("Could not find Instances folder with the name of %s" % SETTINGS.VCENTER_INSTANCES_FOLDER)
+            raise LookupError("Could not find Instances folder with the name of %s" % settings.VCENTER_INSTANCES_FOLDER)
 
-        datastore = self.get_obj([vim.Datastore], SETTINGS.VCENTER_DATASTORE)
+        datastore = self.get_obj([vim.Datastore], settings.VCENTER_DATASTORE)
         if datastore is None:
-            raise LookupError("Could not find datastore with the name of %s" % SETTINGS.VCENTER_DATASTORE)
+            raise LookupError("Could not find datastore with the name of %s" % settings.VCENTER_DATASTORE)
 
-        cluster = self.get_obj([vim.ClusterComputeResource], SETTINGS.VCENTER_CLUSTER)
+        cluster = self.get_obj([vim.ClusterComputeResource], settings.VCENTER_CLUSTER)
         if cluster is None:
-            raise LookupError("Could not find cluster with the name of %s" % SETTINGS.VCENTER_CLUSTER)
+            raise LookupError("Could not find cluster with the name of %s" % settings.VCENTER_CLUSTER)
 
         relospec = vim.vm.RelocateSpec()
         relospec.datastore = datastore
@@ -138,9 +137,9 @@ class VMWareClient(object):
 
     def template_vm(self, vm):
         vm.MarkAsTemplate()  # This doesn't return a task?
-        images_folder = self.get_obj([vim.Folder], SETTINGS.VCENTER_IMAGES_FOLDER)
+        images_folder = self.get_obj([vim.Folder], settings.VCENTER_IMAGES_FOLDER)
         if images_folder is None:
-            raise LookupError("Could not find Images folder with the name of %s" % SETTINGS.VCENTER_IMAGES_FOLDER)
+            raise LookupError("Could not find Images folder with the name of %s" % settings.VCENTER_IMAGES_FOLDER)
 
         task = images_folder.MoveInto([vm])
         self.wait_for_tasks([task])
@@ -160,8 +159,8 @@ class VMWareClient(object):
     @classmethod
     @contextmanager
     def client_session(cls):
-        vmware_client = VMWareClient(SETTINGS.VCENTER_HOST, SETTINGS.VCENTER_PORT, SETTINGS.VCENTER_USERNAME,
-                                     SETTINGS.VCENTER_PASSWORD)
+        vmware_client = VMWareClient(settings.VCENTER_HOST, settings.VCENTER_PORT, settings.VCENTER_USERNAME,
+                                     settings.VCENTER_PASSWORD)
         vmware_client.connect()
 
         try:
