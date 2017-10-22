@@ -1,8 +1,7 @@
 from contextlib import contextmanager
 
 from pypureomapi import Omapi, OmapiErrorNotFound
-
-from ingredients_tasks.conf.loader import SETTINGS
+from simple_settings import settings
 
 
 class OmapiClient(object):
@@ -31,8 +30,8 @@ class OmapiClient(object):
     @classmethod
     @contextmanager
     def client_session(cls):
-        omapi_client = OmapiClient(SETTINGS.DHCP_SERVER_IP, SETTINGS.DHCP_OMAPI_PORT, SETTINGS.DHCP_KEY_NAME,
-                                   SETTINGS.DHCP_B64_KEY)
+        omapi_client = OmapiClient(settings.DHCP_SERVER_IP, settings.DHCP_OMAPI_PORT, settings.DHCP_KEY_NAME,
+                                   settings.DHCP_B64_KEY)
         omapi_client.connect()
 
         try:
