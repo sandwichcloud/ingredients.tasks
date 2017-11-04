@@ -6,7 +6,6 @@ from ingredients_db.models.images import Image
 from ingredients_db.models.instance import InstanceState
 from ingredients_db.models.network import Network
 from ingredients_db.models.network_port import NetworkPort
-from ingredients_tasks.omapi import OmapiClient
 from ingredients_tasks.tasks.tasks import InstanceTask
 from ingredients_tasks.vmware import VMWareClient
 
@@ -43,10 +42,15 @@ def create_instance(self, **kwargs):
         # calculate the next available ip address which is at most O(n) time with n being the number of
         # ip addresses in the cidr
         with self.database.session() as nested_session:
-            network_port = nested_session.query(NetworkPort).filter(NetworkPort.id == instance.network_port_id).first()
+            network_port: NetworkPort = nested_session.query(NetworkPort).filter(
+                NetworkPort.id == instance.network_port_id).first()
 
-            network = nested_session.query(Network).filter(
+            network: Network = nested_session.query(Network).filter(
                 Network.id == network_port.network_id).with_for_update().first()
+
+            dns_servers = []
+            for dns_server in network.dns_servers:
+                dns_servers.append(str(dns_server))
 
             logger.info('Allocating IP address for instance %s' % str(instance.id))
             if network_port.ip_address is not None:
@@ -65,15 +69,9 @@ def create_instance(self, **kwargs):
             nested_session.commit()
 
         logger.info('Creating backing vm for instance %s' % str(instance.id))
-        vmware_vm = vmware.create_vm(vm_name=str(instance.id), image=vmware_image, port_group=port_group)
-
-        nic_mac = vmware.find_vm_mac(vmware_vm)
-        if nic_mac is None:
-            raise LookupError("Could not find mac address of nic")
-
-        logger.info('Telling DHCP about our IP for instance %s' % str(instance.id))
-        with OmapiClient.client_session() as omapi:
-            omapi.add_host(str(ip_address), nic_mac)
+        vmware_vm = vmware.create_vm(vm_name=str(instance.id), image=vmware_image, port_group=port_group,
+                                     ip_address=str(ip_address), gateway=str(network.gateway),
+                                     subnet_mask=str(network.gateway.netmask), dns_servers=dns_servers)
 
         logger.info('Powering on backing vm for instance %s' % str(instance.id))
         vmware.power_on_vm(vmware_vm)
@@ -100,6 +98,7 @@ def delete_instance(self, delete_backing: bool, **kwargs):
 
     instance.state = InstanceState.DELETED
     self.request.session.delete(instance)
+    self.request.session.flush()
     self.request.session.delete(network_port)
 
 

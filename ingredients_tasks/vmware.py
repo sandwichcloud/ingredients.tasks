@@ -43,7 +43,7 @@ class VMWareClient(object):
             raise LookupError("Could not find Instances folder with the name of %s" % settings.VCENTER_INSTANCES_FOLDER)
         return self.get_obj_in_folder([vim.VirtualMachine], vms_folder, vm_name)
 
-    def create_vm(self, vm_name, image, port_group):
+    def create_vm(self, vm_name, image, port_group, ip_address, gateway, subnet_mask, dns_servers):
         vms_folder = self.get_obj([vim.Folder], settings.VCENTER_INSTANCES_FOLDER)
         if vms_folder is None:
             raise LookupError("Could not find Instances folder with the name of %s" % settings.VCENTER_INSTANCES_FOLDER)
@@ -81,6 +81,33 @@ class VMWareClient(object):
         nic.device.connectable = vim.vm.device.VirtualDevice.ConnectInfo()
         nic.device.connectable.startConnected = True
         nic.device.connectable.allowGuestControl = True
+
+        globalip = vim.vm.customization.GlobalIPSettings()
+        globalip.dnsServerList = dns_servers
+
+        guest_map = vim.vm.customization.AdapterMapping()
+        guest_map.adapter = vim.vm.customization.IPSettings()
+        guest_map.adapter.ip = vim.vm.customization.FixedIp()
+        guest_map.adapter.ip.ipAddress = ip_address
+        guest_map.adapter.subnetMask = subnet_mask
+        guest_map.adapter.gateway = gateway
+
+        ident = vim.vm.customization.LinuxPrep()
+        ident.domain = 'sandwich.local'
+        ident.hostName = vim.vm.customization.FixedName()
+        ident.hostName.name = 'ip-' + ip_address.replace(".", "-")
+
+        customspec = vim.vm.customization.Specification()
+        customspec.nicSettingMap = [guest_map]
+        customspec.globalIPSettings = globalip
+        customspec.identity = ident
+
+        clonespec.customization = customspec
+
+        # TODO: guest customization with ip
+        # To disable cloud-init's network configuration capabilities, write a file
+        # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+        # network: {config: disabled}
 
         vmconf = vim.vm.ConfigSpec()
         vmconf.numCPUs = 1  # TODO: allow customization of these
