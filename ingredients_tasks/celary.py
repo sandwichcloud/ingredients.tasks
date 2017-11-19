@@ -24,9 +24,9 @@ class Messaging(object):
             'database': self.vhost
         }
 
-        from ingredients_tasks.tasks import image, instance, network
+        from ingredients_tasks.tasks import image, instance, network, region, zone
 
-        include, task_queues, task_routes = self.populate_tasks(image, instance, network)
+        include, task_queues, task_routes = self.populate_tasks(image, instance, network, region, zone)
 
         self.app.conf.update(
             broker_url=URL(**connect_args).__str__(),
@@ -53,12 +53,12 @@ class Messaging(object):
         task_queues = set()
         task_routes = {}
 
-        from ingredients_tasks.tasks.tasks import NetworkTask, ImageTask
+        from ingredients_tasks.tasks.tasks import NetworkTask, ImageTask, InstanceTask, RegionTask, ZoneTask
 
         for task_module in args:
             include.append(task_module.__name__)
             for name, method in inspect.getmembers(task_module):
-                if method in [NetworkTask, ImageTask]:
+                if method in [NetworkTask, ImageTask, InstanceTask, RegionTask, ZoneTask]:
                     continue
                 if hasattr(method, 'apply_async'):
                     task_queues.add(Queue(name, exchange=Exchange(task_module.__name__), routing_key=name))

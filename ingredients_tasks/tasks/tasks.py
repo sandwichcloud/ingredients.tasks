@@ -11,7 +11,9 @@ from ingredients_db.database import Database
 from ingredients_db.models.images import ImageState, Image
 from ingredients_db.models.instance import InstanceState, Instance
 from ingredients_db.models.network import Network, NetworkState
+from ingredients_db.models.region import RegionState, Region
 from ingredients_db.models.task import TaskState, Task
+from ingredients_db.models.zones import ZoneState, Zone
 
 logger = get_task_logger(__name__)
 
@@ -89,7 +91,7 @@ class NetworkTask(DBTask):
 
     def on_task_failure(self):
         if self.request.network is not None:
-            self.request.network = NetworkState.ERROR
+            self.request.network.state = NetworkState.ERROR
 
 
 class ImageTask(DBTask):
@@ -103,7 +105,7 @@ class ImageTask(DBTask):
 
     def on_task_failure(self):
         if self.request.image is not None:
-            self.request.image = ImageState.ERROR
+            self.request.image.state = ImageState.ERROR
 
 
 class InstanceTask(DBTask):
@@ -117,7 +119,35 @@ class InstanceTask(DBTask):
 
     def on_task_failure(self):
         if self.request.instance is not None:
-            self.request.instance = InstanceState.ERROR
+            self.request.instance.state = InstanceState.ERROR
+
+
+class RegionTask(DBTask):
+    def on_database(self, session):
+        self.request.region = None
+        region = session.query(Region).filter(Region.id == self.request.kwargs['region_id']).first()
+        if region is None:  # We might be faster than the db so retry
+            raise self.retry()
+
+        self.request.region = region
+
+    def on_task_failure(self):
+        if self.request.region is not None:
+            self.request.region.state = RegionState.ERROR
+
+
+class ZoneTask(DBTask):
+    def on_database(self, session):
+        self.request.zone = None
+        zone = session.query(Zone).filter(Zone.id == self.request.kwargs['zone_id']).first()
+        if zone is None:  # We might be faster than the db so retry
+            raise self.retry()
+
+        self.request.zone = zone
+
+    def on_task_failure(self):
+        if self.request.zone is not None:
+            self.request.zone.state = ZoneState.ERROR
 
 
 def create_task(session, entity, celery_task, signature=False, **kwargs):
