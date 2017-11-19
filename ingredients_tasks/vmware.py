@@ -25,41 +25,33 @@ class VMWareClient(object):
     def disconnect(self):
         connect.Disconnect(self.service_instance)
 
-    def get_image(self, image_name):
-        images_folder = self.get_obj([vim.Folder], settings.VCENTER_IMAGES_FOLDER)
-        if images_folder is None:
-            raise LookupError("Could not find Images folder with the name of %s" % settings.VCENTER_IMAGES_FOLDER)
-        image = self.get_obj_in_folder([vim.VirtualMachine], images_folder, image_name)
+    def get_datacenter(self, datacenter_name):
+        return self.get_obj(vim.Datacenter, datacenter_name)
 
-        return image
+    def get_folder(self, folder_name, datacenter):
+        return self.get_obj(vim.Folder, folder_name)
 
-    def delete_image(self, image):
-        task = image.Destroy_Task()
-        self.wait_for_tasks([task])
+    def get_image(self, image_name, datacenter):
+        return self.get_obj(vim.VirtualMachine, image_name, folder=datacenter.vmFolder)
 
-    def get_vm(self, vm_name):
-        vms_folder = self.get_obj([vim.Folder], settings.VCENTER_INSTANCES_FOLDER)
-        if vms_folder is None:
-            raise LookupError("Could not find Instances folder with the name of %s" % settings.VCENTER_INSTANCES_FOLDER)
-        return self.get_obj_in_folder([vim.VirtualMachine], vms_folder, vm_name)
+    def get_vm(self, vm_name, datacenter):
+        return self.get_obj(vim.VirtualMachine, vm_name, folder=datacenter.vmFolder)
 
-    def create_vm(self, vm_name, image, port_group, ip_address, gateway, subnet_mask, dns_servers):
-        vms_folder = self.get_obj([vim.Folder], settings.VCENTER_INSTANCES_FOLDER)
-        if vms_folder is None:
-            raise LookupError("Could not find Instances folder with the name of %s" % settings.VCENTER_INSTANCES_FOLDER)
+    def get_cluster(self, cluster_name, datacenter):
+        return self.get_obj(vim.ClusterComputeResource, cluster_name, folder=datacenter.hostFolder)
 
-        datastore = self.get_obj([vim.Datastore], settings.VCENTER_DATASTORE)
-        if datastore is None:
-            raise LookupError("Could not find datastore with the name of %s" % settings.VCENTER_DATASTORE)
+    def get_datastore(self, datastore_name, datacenter):
+        return self.get_obj(vim.Datastore, datastore_name, folder=datacenter.datastoreFolder)
 
-        cluster = self.get_obj([vim.ClusterComputeResource], settings.VCENTER_CLUSTER)
-        if cluster is None:
-            raise LookupError("Could not find cluster with the name of %s" % settings.VCENTER_CLUSTER)
+    def get_port_group(self, port_group_name, datacenter):
+        return self.get_obj(vim.dvs.DistributedVirtualPortgroup, port_group_name, folder=datacenter.networkFolder)
+
+    def create_vm(self, vm_name, image, datacenter, cluster, datastore, folder, port_group, ip_address, gateway,
+                  subnet_mask, dns_servers):
 
         relospec = vim.vm.RelocateSpec()
         relospec.datastore = datastore
         relospec.pool = cluster.resourcePool
-        # relospec.pool = resource_pool  # Do we want to support resource pools? We need a better environment to test
 
         clonespec = vim.vm.CloneSpec()
         clonespec.location = relospec
@@ -104,11 +96,6 @@ class VMWareClient(object):
 
         clonespec.customization = customspec
 
-        # TODO: guest customization with ip
-        # To disable cloud-init's network configuration capabilities, write a file
-        # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
-        # network: {config: disabled}
-
         vmconf = vim.vm.ConfigSpec()
         vmconf.numCPUs = 1  # TODO: allow customization of these
         vmconf.memoryMB = 1024
@@ -127,10 +114,36 @@ class VMWareClient(object):
 
         clonespec.config = vmconf
 
-        task = image.Clone(folder=vms_folder, name=vm_name, spec=clonespec)
+        if folder is not None:
+            task = image.Clone(folder=folder, name=vm_name, spec=clonespec)
+        else:
+            task = image.Clone(name=vm_name, spec=clonespec)
+
         self.wait_for_tasks([task])
 
-        return self.get_vm(vm_name)
+        vm = self.get_vm(vm_name, datacenter)
+
+        # TODO: uncomment when we can specify disk size
+        # # Resize Storage Drive
+        # virtual_disk_device = None
+        #
+        # # Find the disk device
+        # for dev in vm.config.hardware.device:
+        #     if isinstance(dev, vim.vm.device.VirtualDisk) and dev.deviceInfo.label == "Hard disk 1":
+        #         virtual_disk_device = dev
+        #         break
+        #
+        # virtual_disk_spec = vim.vm.device.VirtualDeviceSpec()
+        # virtual_disk_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+        # virtual_disk_spec.device = virtual_disk_device
+        # virtual_disk_spec.device.capacityInBytes = 100 * (1024 ** 3)
+        #
+        # spec = vim.vm.ConfigSpec()
+        # spec.deviceChange = [virtual_disk_spec]
+        # task = vm.ReconfigVM_Task(spec=spec)
+        # self.wait_for_tasks([task])
+
+        return vm
 
     def power_on_vm(self, vm):
         if vm.runtime.powerState == vim.VirtualMachinePowerState.poweredOff:
@@ -162,72 +175,41 @@ class VMWareClient(object):
         task = vm.Destroy()
         self.wait_for_tasks([task])
 
-    def template_vm(self, vm):
-        vm.MarkAsTemplate()  # This doesn't return a task?
-        images_folder = self.get_obj([vim.Folder], settings.VCENTER_IMAGES_FOLDER)
-        if images_folder is None:
-            raise LookupError("Could not find Images folder with the name of %s" % settings.VCENTER_IMAGES_FOLDER)
-
-        task = images_folder.MoveInto([vm])
+    def delete_image(self, image):
+        task = image.Destroy_Task()
         self.wait_for_tasks([task])
 
-    def find_vm_mac(self, vm):
-        for device in vm.config.hardware.device:
-            if isinstance(device, vim.vm.device.VirtualEthernetCard):
-                return device.macAddress
+    def template_vm(self, vm, datastore, folder):
+        reloSpec = vim.vm.RelocateSpec()
+        reloSpec.datastore = datastore
+        # the vm template stays on the host
+        # if the host is down any clone will fail
 
-        return None
+        if folder is not None:
+            reloSpec.folder = folder
 
-    def get_port_group(self, port_group_name):
-        port_group = self.get_obj([vim.dvs.DistributedVirtualPortgroup], port_group_name)
+        task = vm.RelocateVM_Task(reloSpec)
+        self.wait_for_tasks([task])
+        vm.MarkAsTemplate()  # This doesn't return a task?
 
-        return port_group
-
-    @classmethod
-    @contextmanager
-    def client_session(cls):
-        vmware_client = VMWareClient(settings.VCENTER_HOST, settings.VCENTER_PORT, settings.VCENTER_USERNAME,
-                                     settings.VCENTER_PASSWORD)
-        vmware_client.connect()
-
-        try:
-            yield vmware_client
-        finally:
-            vmware_client.disconnect()
-
-    def get_obj(self, vimtype, name):
+    def get_obj(self, vimtype, name, folder=None):
         """
         Return an object by name, if name is None the
         first found object is returned
         """
         obj = None
         content = self.service_instance.RetrieveContent()
-        container = content.viewManager.CreateContainerView(content.rootFolder, vimtype, True)
+
+        if folder is None:
+            folder = content.rootFolder
+
+        container = content.viewManager.CreateContainerView(folder, [vimtype], True)
         for c in container.view:
-            if name:
-                if c.name == name:
-                    obj = c
-                    break
-            else:
+            if c.name == name:
                 obj = c
                 break
 
         container.Destroy()
-        return obj
-
-    def get_obj_in_folder(self, vimtype, folder, name):
-        obj = None
-        content = self.service_instance.RetrieveContent()
-        container = content.viewManager.CreateContainerView(folder, vimtype, True)
-        for c in container.view:
-            if name:
-                if c.name == name:
-                    obj = c
-                    break
-            else:
-                obj = c
-                break
-
         return obj
 
     def wait_for_tasks(self, tasks):
@@ -275,3 +257,15 @@ class VMWareClient(object):
         finally:
             if pcfilter:
                 pcfilter.Destroy()
+
+    @classmethod
+    @contextmanager
+    def client_session(cls):
+        vmware_client = VMWareClient(settings.VCENTER_HOST, settings.VCENTER_PORT, settings.VCENTER_USERNAME,
+                                     settings.VCENTER_PASSWORD)
+        vmware_client.connect()
+
+        try:
+            yield vmware_client
+        finally:
+            vmware_client.disconnect()
