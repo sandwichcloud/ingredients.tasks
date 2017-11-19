@@ -1,7 +1,7 @@
 import celery
 from celery.utils.log import get_task_logger
 
-from ingredients_db.models.region import Region, RegionState
+from ingredients_db.models.region import RegionState
 from ingredients_tasks.tasks.tasks import RegionTask
 from ingredients_tasks.vmware import VMWareClient
 
@@ -10,7 +10,7 @@ logger = get_task_logger(__name__)
 
 @celery.shared_task(base=RegionTask, bind=True, max_retires=2, default_retry_delay=5)
 def create_region(self, **kwargs):
-    region: Region = self.request.region
+    region = self.request.region
     with VMWareClient.client_session() as vmware:
 
         datacenter = vmware.get_datacenter(region.datacenter)

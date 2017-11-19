@@ -76,7 +76,7 @@ def create_instance(self, **kwargs):
             # TODO: calculate correct zone
             # we currently just return the first
             zone: Zone = self.request.session.query(Zone).filter(Zone.region_id == region.id).filter(
-                Zone.schedulable == True).one()
+                Zone.schedulable == True).one()  # noqa: E712
             if zone is None:
                 raise LookupError("Could not find a zone to place the instance into in the region %s" % str(region.id))
 
