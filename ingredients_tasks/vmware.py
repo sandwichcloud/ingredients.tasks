@@ -29,6 +29,7 @@ class VMWareClient(object):
         return self.get_obj(vim.Datacenter, datacenter_name)
 
     def get_folder(self, folder_name, datacenter):
+        # TODO: find folder in DC
         return self.get_obj(vim.Folder, folder_name)
 
     def get_image(self, image_name, datacenter):
@@ -136,7 +137,7 @@ class VMWareClient(object):
         # virtual_disk_spec = vim.vm.device.VirtualDeviceSpec()
         # virtual_disk_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
         # virtual_disk_spec.device = virtual_disk_device
-        # virtual_disk_spec.device.capacityInBytes = 100 * (1024 ** 3)
+        # virtual_disk_spec.device.capacityInBytes = 100 * (1024 ** 3) # 100GB disk
         #
         # spec = vim.vm.ConfigSpec()
         # spec.deviceChange = [virtual_disk_spec]
