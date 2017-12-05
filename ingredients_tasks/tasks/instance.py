@@ -49,7 +49,7 @@ def create_instance(self, **kwargs):
             NetworkPort.id == instance.network_port_id).first()
 
         network: Network = self.request.session.query(Network).filter(
-            Network.id == network_port.network_id).with_for_update().one()
+            Network.id == network_port.network_id).one()
 
         port_group = vmware.get_port_group(network.port_group, datacenter)
         if port_group is None:
@@ -79,7 +79,7 @@ def create_instance(self, **kwargs):
                 Zone.schedulable == True).one()  # noqa: E712
             if zone is None:
                 raise LookupError("Could not find a zone to place the instance into in the region %s" % str(region.id))
-
+            instance.zone_id = zone.id
         cluster = vmware.get_cluster(zone.vm_cluster, datacenter)
         if cluster is None:
             raise LookupError("Could not find VMWare cluster for zone %s" % str(zone.id))
@@ -118,6 +118,7 @@ def create_instance(self, **kwargs):
 
         logger.info('Creating backing vm for instance %s' % str(instance.id))
         vmware_vm = vmware.create_vm(vm_name=str(instance.id),
+                                     datacenter=datacenter,
                                      image=vmware_image,
                                      cluster=cluster,
                                      datastore=datastore,
@@ -125,7 +126,7 @@ def create_instance(self, **kwargs):
                                      port_group=port_group,
                                      ip_address=str(ip_address),
                                      gateway=str(network.gateway),
-                                     subnet_mask=str(network.gateway.netmask),
+                                     subnet_mask=str(network.cidr.netmask),
                                      dns_servers=dns_servers)
 
         logger.info('Powering on backing vm for instance %s' % str(instance.id))
