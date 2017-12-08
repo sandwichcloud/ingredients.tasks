@@ -2,6 +2,7 @@ import celery
 from celery.utils.log import get_task_logger
 
 from ingredients_db.models.images import ImageState
+from ingredients_db.models.instance import Instance, InstanceState
 from ingredients_db.models.region import Region
 from ingredients_tasks.tasks.tasks import ImageTask
 from ingredients_tasks.vmware import VMWareClient
@@ -48,6 +49,7 @@ def delete_image(self, **kwargs):
 @celery.shared_task(base=ImageTask, bind=True, max_retires=2, default_retry_delay=5)
 def convert_vm(self, **kwargs):
     image = self.request.image
+    instance = self.request.session.query(Instance).filter(Instance.id == kwargs['instance_id']).one()
     region: Region = self.request.session.query(Region).filter(Region.id == image.region_id).one()
     with VMWareClient.client_session() as vmware:
         datacenter = vmware.get_datacenter(region.datacenter)
@@ -69,6 +71,7 @@ def convert_vm(self, **kwargs):
             if folder is None:
                 raise LookupError("Could not find VMWare VM & Templates folder for region %s" % str(region.id))
 
-        vmware.template_vm(vmware_vm, datastore, folder)
+        image.file_name = vmware.clone_and_template_vm(vmware_vm, datastore, folder)
 
+    instance.state = InstanceState.STOPPED  # If this errors the instance will be stuck in the IMAGING state
     image.state = ImageState.CREATED

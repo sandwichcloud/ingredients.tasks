@@ -1,4 +1,5 @@
 import time
+import uuid
 from contextlib import contextmanager
 
 from pyVim import connect
@@ -157,7 +158,7 @@ class VMWareClient(object):
                 try:
                     vm.ShutdownGuest()
                 except vim.fault.ToolsUnavailable:
-                    # Guest tools was not running to hard power off instead
+                    # Guest tools was not running so hard power off instead
                     return self.power_off_vm(vm, hard=True)
                 # Poll every 5 seconds until powered off or timeout
                 while vm.runtime.powerState == vim.VirtualMachinePowerState.poweredOn:
@@ -180,7 +181,7 @@ class VMWareClient(object):
         task = image.Destroy_Task()
         self.wait_for_tasks([task])
 
-    def template_vm(self, vm, datastore, folder):
+    def clone_and_template_vm(self, vm, datastore, folder):
         reloSpec = vim.vm.RelocateSpec()
         reloSpec.datastore = datastore
         # the vm template stays on the host
@@ -189,9 +190,32 @@ class VMWareClient(object):
         if folder is not None:
             reloSpec.folder = folder
 
-        task = vm.RelocateVM_Task(reloSpec)
+        # Configure the new vm to be super small because why not
+        # We may want to remove it from the vswitch as well
+        vmconf = vim.vm.ConfigSpec()
+        vmconf.numCPUs = 1
+        vmconf.memoryMB = 128
+
+        # The vm may have additional device customization (i.e more disks)
+        # How do we remove those devices and only keep the first disk?
+
+        # If the vm starts with a large disk there is no way to shrink it.
+        # Hopefully it is thin provisioned...
+        # We should be smart when we create instances that will be converted to images
+        # they should have as small a disk as possible
+        # storage is cheap but cloning is expensive
+
+        clonespec = vim.vm.CloneSpec()
+        clonespec.location = reloSpec
+        clonespec.config = vmconf
+        clonespec.powerOn = False
+        clonespec.template = True
+
+        file_name = str(uuid.uuid4())
+
+        task = vm.Clone(folder=folder, name=file_name, spec=clonespec)
         self.wait_for_tasks([task])
-        vm.MarkAsTemplate()  # This doesn't return a task?
+        return file_name
 
     def get_obj(self, vimtype, name, folder=None):
         """
